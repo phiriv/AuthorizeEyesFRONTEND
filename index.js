@@ -1,17 +1,30 @@
 
 const fs = require("fs");
 const path = require("path");
-var express = require('express');
-var app = express();
+const express = require('express');
+let app = express();
+const bodyParser = require('body-parser')
 const fr = require('face-recognition')
 const multer = require('multer');
+app.use(express.static(__dirname + '/views'));
+app.use(express.static(__dirname + '/utils'));
 
-// Our first route
-app.get('/', function (req, res) {
-    res.send('Hello Dev!');
+app.set('views', __dirname + '/views');
+app.set('view engine', 'jade');
+app.use(bodyParser());
+/**
+ * @description default route
+ */
+app.get('/', function (request, response) {
+    response.writeHead(200, { 'Content-Type': 'text/html' });
+    response.sendfile(__dirname + '/views/index.html');
+
 });
 
-app.post('detect/', function (req, res) {
+/**
+ * @description route that checks if there is a non authorized person in the feed
+ */
+app.post('/oauth', function (req, res) {
     let file = __dirname + "/" + req.files.file.name;
     fs.readFile(req.files.file.path, function (err, data) {
         fs.writeFile(file, data, function (err) {
@@ -19,22 +32,41 @@ app.post('detect/', function (req, res) {
             if (err) {
                 console.log(err);
             } else {
-                let testDataByClass = null
-                const thereIsAface = checkIfThereIsAFace();
+                const thereIsAface = checkIfThereIsAFace(file);
                 response = isThisPersonAuthorized()
-
+                console.log(response);
+                res.send(JSON.stringify(response));
+                io.sockets.on('connection', function (socket) {
+                    socket.send(('stream', { 'status': response==0?"failure":"success", 'imagesrc': req.files.file.imageFilePath }));
+                });
+                res.end()
             }
-            console.log(response);
-            res.end(JSON.stringify(response));
-        });
-    });
+        })
+    })
 })
-
-// Listen to port 5000
-app.listen(5000, function () {
+/**
+ * server instance
+ */
+let server = app.listen(5000, function () {
     console.log('Dev app listening on port 5000!');
     trainAlgorithm();
 });
+/**
+ * socket io listening to the sever
+ */
+const io = require('socket.io').listen(server);
+/**disable logging */
+
+io.set('log level', 1);
+// define interactions with client
+io.sockets.on('connection', function (socket) {
+    //send data to client
+    setInterval(function () {
+        socket.emit('stream', { 'status': "success", 'imagesrc': 'img/zuck1.jpg' });
+    }, 1000);
+});
+
+
 /**
  * returns if there iss atleast one face in the picture sent
  * 
@@ -57,7 +89,7 @@ function checkIfThereIsAFace(imagePath) {
 function trainAlgorithm() {
     const recognizer = fr.FaceRecognizer()
     const dataPath = path.resolve('./utils/img')
-    const classNames = ['pierre',]
+    const classNames = ['pierre',"philly"]
     const allFiles = fs.readdirSync(dataPath)
     const imagesByClass = classNames.map(personName =>
         allFiles
@@ -66,7 +98,7 @@ function trainAlgorithm() {
             .map(imageFilePath => fr.loadImage(imageFilePath))
     )
     let numTrainingFaces = 10;
-    testDataByClass = imagesByClass.map(imgs => imgs.slice(numTrainingFaces))
+    let trainDataByClass = imagesByClass.map(imgs => imgs.slice(numTrainingFaces))
     trainDataByClass.forEach((faces, label) => {
         const name = classNames[label]
         recognizer.addFaces(faces, name)
@@ -77,13 +109,30 @@ function trainAlgorithm() {
 /**
  * @description gets the number of face in the picture and compares each faces to the authorised faces in the list
  * each face should have at most [number of authorised faces-1] errors
+ * @todo eventually apply DRY
  */
 function isThisPersonAuthorized() {
     const recognizer = fr.FaceRecognizer()
+    const dataPath = path.resolve('./utils/img')
+    const classNames = ['pierre']
+    const allFiles = fs.readdirSync(dataPath)
+    const imagesByClass = classNames.map(personName =>
+        allFiles
+            .filter(imagefile => imagefile.includes(personName))
+            .map(imageFile => path.join(dataPath, imageFile))
+            .map(imageFilePath => fr.loadImage(imageFilePath))
+    )
+    let numTrainingFaces = 10;
+    let trainDataByClass = imagesByClass.map(imgs => imgs.slice(numTrainingFaces))
+    trainDataByClass.forEach((faces, label) => {
+        const name = classNames[label]
+        recognizer.addFaces(faces, name)
+    })
+
     let numberOfPossibleIntruder = 0;
-    const modelState = require('model.json')
+    const modelState = require('./model.json')
     recognizer.load(modelState)
-    testDataByClass.forEach((faces, label) => {
+    trainDataByClass.forEach((faces, label) => {
         const name = classNames[label]
         let numberOfErrorsInTheFacialRecon = 0;
         faces.forEach((face, i) => {
@@ -95,7 +144,8 @@ function isThisPersonAuthorized() {
                 numberOfPossibleIntruder++;
             }
         })
-        return numberOfPossibleIntruder;
+
 
     })
+    return numberOfPossibleIntruder;
 }

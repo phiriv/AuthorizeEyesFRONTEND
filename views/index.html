@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Security Monitor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/1.7.2/socket.io.js"></script>
+    <script src="https://unpkg.com/vue"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+
+</head>
+
+<body>
+    <div id="app">
+        <el-row>
+            <el-col :span="24">
+                <el-card class="box-card">
+                    <div slot="header" class="content">
+                        <span>Camera Feed</span>
+                        <div class="content">
+                            <span>Status:</span> <el-tag v-bind:type="title">{{success!="success"? "Everything is ok":"intuder alert"}}</el-tag>
+                        </div>
+
+
+                    </div>
+
+                    <img v-bind:src="imagesrc">
+
+                </el-card>
+            </el-col>
+        </el-row>
+
+
+    </div>
+    <style>
+        .content {
+            text-align: center;
+            size: 32px;
+            font-weight: bolder;
+        }
+    </style>
+    <script>
+        let socket = io.connect();
+        socket.on('stream', function (data) {
+            app.title = data.status;
+            app.imagesrc = data.imagesrc;
+        });
+        let app = new Vue({
+            el: '#app',
+            data: {
+                imagesrc: '',
+                title: ''
+            },
+            methods: {
+
+            }
+        })
+    </script>
+    <script src="https://unpkg.com/element-ui/lib/index.js"></script>
+
+</body>
+
+</html>
