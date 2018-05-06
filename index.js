@@ -3,15 +3,27 @@ const fs = require("fs");
 const path = require("path");
 const express = require('express');
 let app = express();
+let cors = require('cors')
+let busboy = require('connect-busboy')
 const bodyParser = require('body-parser')
 const fr = require('face-recognition')
 const multer = require('multer');
+const storage = multer.diskStorage({
+    destination: function (req, file, callBack) {
+        callBack(null, 'destinationFolder');
+    },
+    filename: function (req, file, callBack) {
+        callBack(null, 'somename.png');
+    }
+});
+const upload = multer({ storage: storage }).single('file');
 app.use(express.static(__dirname + '/views'));
 app.use(express.static(__dirname + '/utils'));
-
+app.use(cors())
 app.set('views', __dirname + '/views');
 app.set('view engine', 'jade');
 app.use(bodyParser());
+
 /**
  * @description default route
  */
@@ -25,25 +37,24 @@ app.get('/', function (request, response) {
  * @description route that checks if there is a non authorized person in the feed
  */
 app.post('/oauth', function (req, res) {
-    let file = __dirname + "/" + req.files.file.name;
-    fs.readFile(req.files.file.path, function (err, data) {
-        fs.writeFile(file, data, function (err) {
-            let response = 0;
-            if (err) {
-                console.log(err);
-            } else {
-                const thereIsAface = checkIfThereIsAFace(file);
-                response = isThisPersonAuthorized()
-                console.log(response);
-                res.send(JSON.stringify(response));
-                io.sockets.on('connection', function (socket) {
-                    socket.send(('stream', { 'status': response==0?"failure":"success", 'imagesrc': req.files.file.imageFilePath }));
-                });
-                res.end()
-            }
-        })
-    })
+    let response = 0;
+    upload(req, res, function (err) {
+        if (err) {
+         res.end("Error uploading file.")  
+        }
+        else {
+            let file = __dirname + "/utils/img/somename.png"
+            const thereIsAface = checkIfThereIsAFace(file);
+            response = isThisPersonAuthorized()
+            io.sockets.on('connection', function (socket) {
+                socket.send(('stream', { 'status': response == 0 ? "failure" : "success", 'imagesrc': __dirname + "/utils/img/somename.png" }));
+            });
+            res.send(JSON.stringify(response));
+        }
+    }) 
+    res.end()
 })
+
 /**
  * server instance
  */
@@ -57,7 +68,6 @@ let server = app.listen(5000, function () {
 const io = require('socket.io').listen(server);
 /**disable logging */
 
-io.set('log level', 1);
 // define interactions with client
 io.sockets.on('connection', function (socket) {
     //send data to client
@@ -89,7 +99,7 @@ function checkIfThereIsAFace(imagePath) {
 function trainAlgorithm() {
     const recognizer = fr.FaceRecognizer()
     const dataPath = path.resolve('./utils/img')
-    const classNames = ['pierre',"philly"]
+    const classNames = ['pierre', "philly"]
     const allFiles = fs.readdirSync(dataPath)
     const imagesByClass = classNames.map(personName =>
         allFiles
